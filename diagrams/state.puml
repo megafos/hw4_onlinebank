@@ -1,0 +1,21 @@
+@startuml
+skinparam defaultFontName DejaVu Sans
+skinparam dpi 150
+hide empty description
+title Состояние логического уведомления
+[*] --> ACCEPTED
+ACCEPTED --> IN_PROGRESS : разрешён первый канал
+IN_PROGRESS --> IN_PROGRESS : retry или следующий канал
+IN_PROGRESS --> CONFIRMED : допустимое подтверждение
+IN_PROGRESS --> WAITING_RETRY : 60 с без подтверждения
+WAITING_RETRY --> IN_PROGRESS : сохранённый таймер
+WAITING_RETRY --> MANUAL_REVIEW : требуется разбор
+ACCEPTED --> MANUAL_REVIEW : нет допустимого контакта
+WAITING_RETRY --> EXPIRED_UNCONFIRMED : 24 часа
+IN_PROGRESS --> EXPIRED_UNCONFIRMED : срок истёк
+MANUAL_REVIEW --> EXPIRED_UNCONFIRMED : срок истёк
+MANUAL_REVIEW --> CONFIRMED : позднее подтверждение
+EXPIRED_UNCONFIRMED --> CONFIRMED : позднее подтверждение\nSLO breach сохраняется
+WAITING_RETRY --> CONFIRMED : позднее подтверждение
+CONFIRMED --> [*]
+@enduml

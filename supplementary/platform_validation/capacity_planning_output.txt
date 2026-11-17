@@ -1,0 +1,6 @@
+test_dau_and_mau (__main__.CapacityTests.test_dau_and_mau) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK

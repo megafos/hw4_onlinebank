@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Notification Platform internal API
+  version: 1.0.0
+  description: Architectural contract. No running endpoint is supplied. Producer identity is derived from authentication.
+servers:
+  - url: https://notifications.bank.example
+security:
+  - serviceAuth: []
+paths:
+  /v1/notifications:
+    post:
+      operationId: submitNotification
+      summary: Persist notification responsibility before acknowledgement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './notification.schema.json'
+      responses:
+        '202':
+          description: Newly persisted notification, not yet delivered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+        '200':
+          description: Same business key and canonical payload, previous ID returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+        '409': {description: 'Same business key with different canonical payload'}
+        '422': {description: 'Invalid time, purpose, template or recipient data'}
+        '401': {description: 'Invalid authentication'}
+        '403': {description: 'Producer is not allowed to submit this purpose'}
+        '429':
+          description: Admission limit; sender retains outbox
+          headers:
+            Retry-After: {schema: {type: integer, minimum: 1}}
+        '503': {description: 'Durable acceptance unavailable; retry same business key'}
+  /v1/notifications/{notification_id}:
+    get:
+      operationId: getNotificationStatus
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Status subject to caller ownership and role
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+        '401': {description: 'Invalid authentication'}
+        '403': {description: 'Not authorized for this recipient or producer'}
+        '404': {description: 'Not found'}
+  /v1/notifications/{notification_id}/ack:
+    post:
+      operationId: acknowledgePush
+      security:
+        - userAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attempt_id, receipt_id, message_token]
+              properties:
+                attempt_id: {type: string, format: uuid}
+                receipt_id: {type: string, minLength: 1}
+                message_token: {type: string, minLength: 1}
+      responses:
+        '204': {description: 'Authenticated ACK durably stored or already stored'}
+        '401': {description: 'Invalid session'}
+        '403': {description: 'Wrong recipient or message token'}
+        '422': {description: 'Attempt not associated with this push notification'}
+        '503': {description: 'Receipt not persisted; retry'}
+  /internal/v1/provider-receipts:
+    post:
+      operationId: acceptNormalizedReceipt
+      description: Adapter verifies original provider signature and anti-replay window before calling this internal endpoint. Raw provider callbacks use provider-specific ingress.
+      security:
+        - adapterAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, receipt_id, attempt_id, provider_message_id, event_time, evidence_kind, outcome]
+              properties:
+                provider: {type: string, minLength: 1}
+                receipt_id: {type: string, minLength: 1}
+                attempt_id: {type: string, format: uuid}
+                provider_message_id: {type: string, minLength: 1}
+                event_time: {type: string, format: date-time}
+                evidence_kind: {enum: [provider_acceptance, sms_dlr, email_server_delivery, provider_failure]}
+                outcome: {enum: [accepted, failed, confirmed]}
+      responses:
+        '204': {description: 'Receipt persisted or duplicate with same contents'}
+        '401': {description: 'Untrusted adapter'}
+        '409': {description: 'Receipt ID reused with different contents'}
+        '422': {description: 'Invalid attempt, provider binding or evidence/outcome combination'}
+        '503': {description: 'Retry; receipt not durably persisted'}
+components:
+  securitySchemes:
+    serviceAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    userAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    adapterAuth: {type: mutualTLS}
+  parameters:
+    NotificationId:
+      name: notification_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    Status:
+      type: object
+      required: [notification_id, state, accepted_at]
+      properties:
+        notification_id: {type: string, format: uuid}
+        state: {enum: [ACCEPTED, IN_PROGRESS, WAITING_RETRY, CONFIRMED, EXPIRED_UNCONFIRMED, MANUAL_REVIEW]}
+        accepted_at: {type: string, format: date-time}
+        confirmed_at: {type: [string, 'null'], format: date-time}
+        evidence_kind: {type: [string, 'null']}
+        late_confirmation: {type: boolean}

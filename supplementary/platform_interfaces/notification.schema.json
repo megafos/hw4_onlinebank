@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:notification-platform:notification:1",
+  "title": "Notification submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "recipient_id", "purpose", "type", "template_id", "template_version", "payload_ref", "occurred_at", "expires_at"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "recipient_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 100},
+    "type": {"enum": ["transactional", "service", "marketing"]},
+    "template_id": {"type": "string", "minLength": 1, "maxLength": 100},
+    "template_version": {"type": "integer", "minimum": 1},
+    "payload_ref": {"type": "string", "pattern": "^payload://[A-Za-z0-9_-]+$"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"}
+  },
+  "description": "Producer identity comes from authentication. Service verifies timestamps, ownership and approved purpose/template. For RFC critical events automatic delivery expires after 24 hours; schema alone cannot validate cross-field temporal constraints."
+}

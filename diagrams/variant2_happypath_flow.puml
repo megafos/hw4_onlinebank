@@ -1,0 +1,84 @@
+@startuml 2_main_compact
+title Вариант 2: основная доставка
+hide footbox
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 12
+skinparam maxMessageSize 42
+skinparam ParticipantPadding 8
+skinparam sequenceMessageAlign left
+skinparam sequence {
+ ParticipantBackgroundColor #E8F0F7
+ ArrowColor #244761
+ NoteBackgroundColor #FFF6D8
+}
+participant "Сервисы банка" as B
+participant "Профиль клиента" as P
+box "Notification Platform" #F1F6FA
+participant "Notification API" as API
+database "Прикладной реестр" as DB
+participant "Relay" as R
+queue "Kafka" as K
+participant "Dispatcher" as D
+participant "Temporal Service" as T
+database "БД Temporal" as H
+participant "Workflow worker" as W
+participant "Activity worker" as A
+end box
+participant "Каналы и клиенты" as CH
+autonumber
+== Приём и запуск ==
+B -> B: Одна транзакция: операция и outbox банка
+B -> API: Передать уведомление с ключом идемпотентности
+API -> DB: Транзакция: уведомление, ключ и outbox
+API --> B: 202 после commit
+R -> DB: Прочитать outbox запуска
+R -> K: Опубликовать событие
+K -> D: Запустить процесс
+D -> T: StartWorkflow; ID = notification_id
+T -> H: Устойчиво сохранить запуск и history
+T --> D: Запуск принят либо такой процесс уже существует
+D -> K: Commit offset после проверки результата запуска
+note over DB,T
+Повторный старт не создаёт второй процесс, reuse завершённого ID запрещён.
+end note
+== План и отправка ==
+T -> W: Workflow task
+W -> T: Запланировать activity получения профиля и политики
+T -> A: Activity task
+A -> P: Получить контакты и настройки
+P --> A: Профиль клиента
+A --> T: Профиль и версия политики
+T -> W: Workflow task с записанным результатом
+W -> T: Выбран канал; запланировать Send activity
+T -> A: Отправить; attempt_id
+A -> CH: Send через адаптер; ключ = attempt_id
+CH --> A: Запрос принят провайдером
+A --> T: Результат activity для history
+T -> W: Workflow task с результатом отправки
+W -> T: Ожидать signal либо устойчивый таймер
+== Подтверждение ==
+CH -> API: Callback: доставка подтверждена
+API -> DB: Транзакция: receipt и outbox сигнала
+API --> CH: 2xx после commit
+R -> DB: Прочитать outbox сигнала
+R -> T: Signal; Workflow ID и receipt_id
+T -> H: Устойчиво сохранить signal в history
+T --> R: Signal принят
+R -> DB: Отметить передачу сигнала
+T -> W: Workflow task с подтверждением
+W -> W: Дедупликация receipt_id; CONFIRMED
+W -> T: Отменить ожидания; запланировать обновление проекции
+T -> A: Activity обновления статуса
+A -> DB: Идемпотентно обновить read model и аудит
+A --> T: Activity завершена
+T -> W: Результат обновления
+W -> T: Завершить workflow
+note over DB,H
+History в БД Temporal - источник состояния исполнения.
+end note
+legend left
+Стрелки от Temporal к workers означают выдачу задач в ответ на polling.
+History, таймеры и task queues принадлежат Temporal; Kafka используется на входе.
+Activity worker содержит адаптеры каналов. Прямых внешних вызовов из workflow нет.
+endlegend
+@enduml

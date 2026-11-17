@@ -1,0 +1,42 @@
+flowchart TB
+    BANK["Сервисы банка - внешняя система<br/>Операция, собственные БД, outbox"]
+    PROFILE["Профиль клиента - внешняя система<br/>Контакты, согласия и настройки"]
+    CHANNELS["Каналы и клиенты - внешняя система<br/>Push, SMS, email; провайдеры и приложения"]
+
+    subgraph PLATFORM["Notification Platform — C4 Container, критичный поток"]
+        direction TB
+        API["Notification API - контейнер, Go / HTTPS<br/>Приём уведомлений, callbacks и запросы статуса"]
+        DB[("Реестр доставки - контейнер, PostgreSQL<br/>Состояние, попытки, таймеры, inbox, outbox, история")]
+        RELAY["Relay - контейнер, Go<br/>Публикация outbox в Kafka"]
+        KAFKA["Kafka - контейнер, Apache Kafka<br/>Команды, результаты и пробуждения"]
+        COORD["Координатор - контейнер, Go<br/>Правила доставки, переходы, планировщик, восстановление"]
+        ADAPTERS["Адаптеры каналов - группа однотипных контейнеров, Go<br/>Send, lookup, квоты и исполнение попыток"]
+    end
+    OBS["Наблюдаемость - внешняя инфраструктура<br/>Метрики, журналы и трассировки"]
+
+    BANK -->|"1. HTTPS: уведомление или запрос статуса"| API
+    API -->|"2. SQL: приём, receipts, чтение результата"| DB
+    RELAY -->|"3. SQL: работа с outbox и отметка публикации"| DB
+    RELAY -->|"4. Kafka protocol: publish; ответ ACK"| KAFKA
+    KAFKA -->|"5. События; offset после commit БД"| COORD
+    COORD -->|"6. SQL: состояние, inbox, outbox, таймеры"| DB
+    KAFKA -->|"7. Send / lookup; offset после устойчивого задания"| ADAPTERS
+    ADAPTERS -->|"8. SQL: inbox, задания, результаты, outbox"| DB
+    COORD -->|"9. HTTPS: контакты, согласия, настройки"| PROFILE
+    ADAPTERS -->|"10. HTTPS: send / lookup и ответы"| CHANNELS
+    CHANNELS -->|"11. HTTPS: callback / receipt; ответ после commit"| API
+    API -.->|"12. Телеметрия"| OBS
+    RELAY -.->|"12. Телеметрия"| OBS
+    COORD -.->|"12. Телеметрия"| OBS
+    ADAPTERS -.->|"12. Телеметрия"| OBS
+    DB -.->|"12. Метрики хранилища"| OBS
+    KAFKA -.->|"12. Метрики брокера"| OBS
+
+    classDef external fill:#576675,color:#fff,stroke:#344450
+    classDef app fill:#245b81,color:#fff,stroke:#163e59
+    classDef storage fill:#dae7f0,color:#102e44,stroke:#245b81
+    classDef monitoring fill:#e9edf0,color:#243746,stroke:#728392
+    class BANK,PROFILE,CHANNELS external
+    class API,RELAY,COORD,ADAPTERS app
+    class DB,KAFKA storage
+    class OBS monitoring

@@ -1,0 +1,4 @@
+JSON Schema and example: PASS
+OpenAPI 3.1: PASS
+PostgreSQL statements parsed: 12
+SQL parsing is not database execution or an integration test.

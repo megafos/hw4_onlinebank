@@ -1,0 +1,71 @@
+@startuml variant1_channel_failover
+title Вариант 1: переключение канала
+hide footbox
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 13
+skinparam maxMessageSize 45
+skinparam ParticipantPadding 10
+skinparam sequenceMessageAlign left
+skinparam sequence {
+ ParticipantBackgroundColor #E8F0F7
+ ArrowColor #244761
+ NoteBackgroundColor #FFF6D8
+}
+box "Notification Platform" #F1F6FA
+participant "Notification API" as API
+database "Реестр доставки" as DB
+participant "Relay" as R
+queue "Kafka" as K
+participant "Координатор" as C
+participant "Адаптеры каналов" as A
+end box
+participant "Каналы и клиенты" as CH
+autonumber
+note over DB,CH
+Push уже отправлен, подтверждения нет.
+Контакты, план и контрольный таймер сохранены.
+end note
+== Проверка первого канала ==
+C -> DB: Обработать наступивший таймер;\nпроверить состояние, срок и лимиты
+C -> DB: Сохранить команду проверки статуса в outbox
+R -> DB: Прочитать команду
+R -> K: Опубликовать команду
+K -> A: Проверить статус push
+A -> CH: Lookup push-попытки
+CH --> A: Доставлено / не отправлено / неизвестно
+A -> DB: Сохранить результат и outbox
+R -> DB: Прочитать результат
+R -> K: Опубликовать результат
+K -> C: Результат проверки
+alt Доставка подтверждена
+ C -> DB: CONFIRMED; отменить ожидания
+else Подтверждения нет, SMS разрешено и срок не истёк
+ == Переключение на SMS ==
+ C -> DB: Атомарно снять прежний допуск;\nсоздать SMS-попытку, таймер и команду outbox
+ R -> DB: Прочитать команду
+ R -> K: Опубликовать отправку SMS
+ K -> A: Отправить SMS
+ A -> DB: Проверить актуальность допуска; сохранить задание
+ A -> CH: Send SMS с ключом новой попытки
+ CH --> A: Результат приёма запроса
+ A -> DB: Сохранить результат и outbox
+else Нужно ждать либо продолжение запрещено
+ C -> DB: Назначить ожидание или завершить с причиной;\nпо истечении срока — EXPIRED_UNCONFIRMED
+end
+ref over API,CH
+Callback push или SMS: API → Реестр → Relay → Kafka → Координатор.
+Для открытого уведомления: CONFIRMED и отмена ещё не начатых отправок.
+Для закрытого: сохранить позднее подтверждение для сверки.
+end ref
+note over C,CH
+Callback может прийти на любом этапе.
+Перед SMS состояние проверяется повторно.
+При неизвестном исходе push возможен межканальный повтор:
+уже ушедшую отправку отмена в БД не останавливает.
+end note
+legend left
+Сохранение состояния и outbox - одна транзакция.
+Повторные события устраняются через inbox.
+Результаты отправки также проходят через Relay / Kafka к Координатору.
+endlegend
+@enduml

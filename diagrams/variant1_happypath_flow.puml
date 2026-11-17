@@ -1,0 +1,61 @@
+@startuml variant_1_main_delivery
+title Вариант 1: основная доставка
+hide footbox
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 13
+skinparam maxMessageSize 45
+skinparam ParticipantPadding 10
+skinparam sequenceMessageAlign left
+skinparam sequence {
+ ParticipantBackgroundColor #E8F0F7
+ ArrowColor #244761
+ NoteBackgroundColor #FFF6D8
+}
+participant "Сервисы банка" as B
+participant "Профиль клиента" as P
+box "Notification Platform" #F1F6FA
+participant "Notification API" as API
+database "Реестр доставки" as DB
+participant "Relay" as R
+queue "Kafka" as K
+participant "Координатор" as C
+participant "Адаптеры каналов" as A
+end box
+participant "Каналы и клиенты" as CH
+autonumber
+== Приём ==
+B -> B: Сохранить операцию и outbox банка
+B -> API: Передать уведомление с ключом идемпотентности
+API -> DB: Сохранить уведомление и событие outbox
+API --> B: 202: принято после commit
+== Выбор канала и отправка ==
+R -> DB: Прочитать outbox
+R -> K: Опубликовать событие
+K -> C: Уведомление принято
+C -> P: Получить контакты и настройки
+P --> C: Профиль клиента
+C -> DB: Сохранить план, попытку, таймер и команду outbox
+R -> DB: Прочитать команду
+R -> K: Опубликовать команду отправки
+K -> A: Отправить через выбранный канал
+A -> DB: Проверить допуск и сохранить задание
+A -> CH: Отправить сообщение
+CH --> A: Запрос принят провайдером
+A -> DB: Сохранить результат попытки и outbox
+== Подтверждение ==
+CH -> API: Callback: доставка подтверждена
+API -> DB: Сохранить receipt и событие outbox
+API --> CH: 2xx после commit
+R -> DB: Прочитать событие подтверждения
+R -> K: Опубликовать подтверждение
+K -> C: Доставка подтверждена
+C -> DB: CONFIRMED; отменить ожидающие попытки и таймеры
+note over API,CH
+Принятие запроса не равно доставке.
+Callback может опередить ответ на отправку.
+end note
+legend left
+Повторные события устраняются через inbox.
+Результаты отправки также проходят через Relay / Kafka к Координатору.
+endlegend
+@enduml

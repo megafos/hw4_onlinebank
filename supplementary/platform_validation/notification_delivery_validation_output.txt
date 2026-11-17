@@ -1,0 +1,20 @@
+test_changed_payload_conflicts (__main__.DeliveryTests.test_changed_payload_conflicts) ... ok
+test_concurrent_accept (__main__.DeliveryTests.test_concurrent_accept) ... ok
+test_concurrent_failover_single_active (__main__.DeliveryTests.test_concurrent_failover_single_active) ... ok
+test_confirmed_is_not_reverted_by_late_failure (__main__.DeliveryTests.test_confirmed_is_not_reverted_by_late_failure) ... ok
+test_expiry_then_late_confirmation (__main__.DeliveryTests.test_expiry_then_late_confirmation) ... ok
+test_late_ack_cancels_reserved_sms (__main__.DeliveryTests.test_late_ack_cancels_reserved_sms) ... ok
+test_late_ack_cannot_undo_claimed_external_effect (__main__.DeliveryTests.test_late_ack_cannot_undo_claimed_external_effect) ... ok
+test_no_claim_after_expiry (__main__.DeliveryTests.test_no_claim_after_expiry) ... ok
+test_receipt_repeat_and_conflict (__main__.DeliveryTests.test_receipt_repeat_and_conflict) ... ok
+test_repeat_accept_returns_same_id (__main__.DeliveryTests.test_repeat_accept_returns_same_id) ... ok
+test_repeated_timer_does_not_duplicate_attempt (__main__.DeliveryTests.test_repeated_timer_does_not_duplicate_attempt) ... ok
+test_restart_preserves_state (__main__.DeliveryTests.test_restart_preserves_state) ... ok
+test_route_exhaustion_waits_instead_of_false_success (__main__.DeliveryTests.test_route_exhaustion_waits_instead_of_false_success) ... ok
+test_unknown_is_not_resubmitted_blindly (__main__.DeliveryTests.test_unknown_is_not_resubmitted_blindly) ... ok
+test_untrusted_and_unknown_receipts_rejected (__main__.DeliveryTests.test_untrusted_and_unknown_receipts_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.075s
+
+OK

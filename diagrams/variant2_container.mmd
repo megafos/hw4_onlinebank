@@ -1,0 +1,36 @@
+flowchart TB
+ BANK["Сервисы банка - внешняя система"]
+ PROFILE["Профиль клиента - внешняя система"]
+ CHANNELS["Каналы и клиенты - push, SMS, email"]
+ subgraph PLATFORM["Notification Platform · C4 Container · вариант B"]
+ direction TB
+ API["Notification API · Go / HTTPS · приём и callbacks"]
+ DB[("Прикладной реестр · PostgreSQL · приём, outbox, receipts, аудит, read model")]
+ R["Relay · Go · публикация запуска и передача signals"]
+ K["Kafka · события входного потока"]
+ D["Dispatcher · Go · запуск workflow"]
+ T["Temporal Service · history, таймеры, task queues"]
+ H[("БД Temporal · отдельный PostgreSQL persistence")]
+ W["Workflow worker · Go SDK · правила и последовательность доставки"]
+ A["Activity worker · Go SDK · внешние вызовы и адаптеры каналов"]
+ end
+ BANK -->|"HTTPS: уведомление"| API
+ API -->|"SQL: приём и receipt + outbox"| DB
+ R -->|"SQL: outbox и отметки передачи"| DB
+ R -->|"Публикация события запуска"| K
+ K -->|"Событие; offset после запуска"| D
+ D -->|"StartWorkflow; ID = notification_id"| T
+ R -->|"Signal; Workflow ID, receipt_id"| T
+ T -->|"History и устойчивое состояние"| H
+ W <-->|"Polling workflow tasks; команды"| T
+ A <-->|"Polling activity tasks; результаты"| T
+ A -->|"HTTPS: контакты и настройки"| PROFILE
+ A -->|"HTTPS: send / lookup"| CHANNELS
+ CHANNELS -->|"HTTPS: callback / receipt"| API
+ A -->|"SQL: идемпотентная проекция и аудит"| DB
+ classDef ext fill:#576675,color:#fff,stroke:#344450
+ classDef app fill:#245b81,color:#fff,stroke:#163e59
+ classDef data fill:#dae7f0,color:#102e44,stroke:#245b81
+ class BANK,PROFILE,CHANNELS ext
+ class API,R,D,W,A app
+ class DB,K,T,H data

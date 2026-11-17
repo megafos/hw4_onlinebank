@@ -1,0 +1,11 @@
+{
+  "event_id": "transfer_100001_completed",
+  "recipient_id": "customer_demo_42",
+  "purpose": "transfer_confirmation",
+  "type": "transactional",
+  "template_id": "transfer_completed",
+  "template_version": 1,
+  "payload_ref": "payload://demo_100001",
+  "occurred_at": "2026-11-14T10:00:00Z",
+  "expires_at": "2026-11-15T10:00:00Z"
+}

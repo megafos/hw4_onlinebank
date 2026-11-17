@@ -1,0 +1,84 @@
+@startuml 2_failover_compact
+title Вариант 2: переключение канала
+hide footbox
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 12
+skinparam maxMessageSize 42
+skinparam ParticipantPadding 8
+skinparam sequenceMessageAlign left
+skinparam sequence {
+ ParticipantBackgroundColor #E8F0F7
+ ArrowColor #244761
+ NoteBackgroundColor #FFF6D8
+}
+box "Notification Platform" #F1F6FA
+participant "Notification API" as API
+database "Прикладной реестр" as DB
+participant "Relay" as R
+participant "Temporal Service" as T
+participant "Workflow worker" as W
+participant "Activity worker" as A
+end box
+participant "Каналы и клиенты" as CH
+autonumber
+note over T,CH
+Push уже отправлен, подтверждения нет; workflow ожидает.
+Профиль и версия политики ранее записаны в history.
+end note
+== Таймер и проверка push ==
+T -> T: Устойчивый таймер сработал; событие в history
+T -> W: Workflow task после таймера
+W -> W: Проверить подтверждения, срок и бюджет
+alt Уже подтверждено либо продолжение запрещено
+ W -> T: Сохранить результат; обновить проекцию через activity
+else Допустима проверка первого канала
+ W -> T: Запланировать Lookup activity
+ T -> A: Проверить статус push
+ A -> CH: Lookup по идентификатору попытки
+ CH --> A: Доставлено / не отправлено / UNKNOWN
+ A --> T: Результат activity для history
+ T -> W: Workflow task с результатом
+ alt Доставка подтверждена
+  W -> T: CONFIRMED; отменить ожидания
+ else Подтверждения нет; SMS разрешено и срок не истёк
+  == Переключение на SMS ==
+  W -> W: Повторно проверить signals; закрыть прежний допуск;\nсоздать новую разрешённую попытку
+  W -> T: Запланировать Send SMS activity; новый attempt_id
+  T -> A: Отправить SMS
+  A -> A: Проверить deadline и квоту; прежний ключ при retry
+  A -> CH: Send SMS через адаптер
+  CH --> A: Принято / отказ / UNKNOWN
+  A --> T: Результат activity для history
+  T -> W: Workflow task с результатом
+  W -> T: Ожидать signal / таймер либо завершить по политике
+ else Нужно ждать либо исчерпан срок или лимит
+  W -> T: Новый таймер либо явное завершение;\nпо сроку — EXPIRED_UNCONFIRMED
+ end
+end
+== Асинхронное подтверждение ==
+opt Callback push или SMS поступил на любом этапе
+ CH -> API: Receipt с результатом доставки
+ API -> DB: Транзакция: receipt и outbox сигнала
+ API --> CH: 2xx после commit
+ R -> DB: Прочитать outbox сигнала
+ R -> T: Signal; receipt_id
+ alt Workflow ещё открыт
+  T -> W: Workflow task с устойчиво записанным signal
+  W -> W: Дедупликация; допустимый receipt даёт CONFIRMED
+  W -> T: Отменить не начатые отправки и ожидания
+ else Workflow уже закрыт
+  T --> R: Signal не принят закрытым workflow
+  R -> DB: Сохранить поздний receipt и задачу сверки
+ end
+end
+note over W,CH
+Тайм-аут activity не доказывает отсутствие отправки.
+Отмена не останавливает уже ушедший HTTP-запрос.
+При UNKNOWN переключение может дать push и SMS одновременно.
+end note
+legend left
+Стрелки от Temporal к workers означают выдачу задач в ответ на polling.
+History, таймеры и task queues принадлежат Temporal, Kafka используется на входе.
+Activity worker содержит адаптеры каналов. Прямых внешних вызовов из workflow нет.
+endlegend
+@enduml
